@@ -33,4 +33,5 @@
 
 build/
 .ipynb_checkpoints/
+Jupyter/data/
 .vscode/settings.json
