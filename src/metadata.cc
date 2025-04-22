@@ -1,5 +1,13 @@
 #include "metadata.h"
 
+auto get_azimuth(sweep swp) -> vector<double>{
+  vector<double> azi;
+  for(const auto& bin : swp.rays) {
+      azi.push_back(bin.degrees());
+  }
+  return azi;
+}
+
 auto get_date() -> std::string {
   std::time_t rawtime = std::time(nullptr);
   std::tm* timeinfo = std::localtime(&rawtime);
@@ -58,6 +66,14 @@ auto get_nyquist(io::odim::polar_volume const vol_odim) -> array1f{
     }
 
   return nyquist;
+}
+
+auto get_range(sweep swp) -> vector<double>{
+  vector<double> r;
+  for(const auto& bin : swp.bins) {
+      r.push_back(double(bin.slant_range));
+  }
+  return r;
 }
 
 auto init_altitudes(io::configuration const& config) -> array1f
