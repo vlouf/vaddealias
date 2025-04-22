@@ -32,4 +32,5 @@
 *.app
 
 build/
+.ipynb_checkpoints/
 .vscode/settings.json
