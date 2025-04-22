@@ -157,6 +157,34 @@ auto read_volume(
   return dset;
 }
 
+template <typename T>
+auto meshgrid(const std::vector<T>& x, const std::vector<T>& y) ->
+std::pair<std::vector<std::vector<T>>, std::vector<std::vector<T>>>{
+  // Not used yet.
+
+  std::vector<std::vector<T>> X(y.size(), std::vector<T>(x.size()));
+  std::vector<std::vector<T>> Y(y.size(), std::vector<T>(x.size()));
+
+  for (size_t i = 0; i < y.size(); ++i) {
+    for (size_t j = 0; j < x.size(); ++j) {
+      X[i][j] = x[j];
+      Y[i][j] = y[i];
+    }
+  }
+  return {X, Y};
+}
+
+template <typename T>
+auto argmin(const vector<T>& x, T val) -> size_t{
+  vector<T> x2;
+  for(size_t i=0; i<x.size(); i++){
+    x2.push_back(std::abs(x[i] - val));
+  }
+  auto min_it = std::min_element(x2.begin(), x2.end());
+  size_t min_index = std::distance(x2.begin(), min_it);
+  return min_index;
+}
+
 auto process_file(
   io::configuration const& config,
   std::filesystem::path const& vad_file,
@@ -167,17 +195,35 @@ auto process_file(
   auto dset2 = read_volume(odim_file2, config, false);
   auto df = read_vad(vad_file);
 
-  volume vel_dealiased;
-  vel_dealiased.location = dset2.vradh.location;
-  for(size_t i=0; i < dset2.vradh.sweeps.size(); i++){
-    auto nyquist = dset2.nyquist[i];
-    auto vel = dset2.vradh.sweeps[i].data;
-    auto bins = dset2.vradh.sweeps[i].bins;
-    auto elev = dset2.vradh.sweeps[i].beam.elevation();
-    auto rays = dset2.vradh.sweeps[i].rays;
+  // Create the VAD velocity field.
+  for(size_t k=0; k < dset2.vradh.sweeps.size(); k++){
+    auto nyquist = dset2.nyquist[k];
+    auto vel = dset2.vradh.sweeps[k].data;
 
+    auto r = get_range(dset2.vradh.sweeps[k]);
+    auto azi = get_azimuth(dset2.vradh.sweeps[k]);    
+    auto el = dset2.vradh.sweeps[k].beam.elevation();
+    auto cel = cos(M_PI / 180. * el);
+    auto sel = sin(M_PI / 180. * el);
+
+    // Generated anew for every sweep
+    auto vrz = array2f{vec2z{r.size(), azi.size()}};  // vec2 dimensions are reversed.
+    for(size_t i=0; i<r.size(); i++){
+      auto alti = dset2.vradh.sweeps[k].bins[i].altitude;
+      auto pos = argmin(df.z, alti);
+
+      for(size_t j=0; j<azi.size(); j++){
+        vrz[j][i] = (
+          0.5 * r[i] * cel * df.div[pos]
+          - df.vt[pos] * sel
+          + df.u0[pos] * sin(M_PI / 180. * azi[j]) * cel
+          + df.v0[pos] * cos(M_PI / 180. * azi[j]) * cel
+          - 0.5 * r[i] * cel * cos(2 * M_PI / 180. * azi[j]) * df.det[pos]
+          + 0.5 * r[i] * cel * sin(2 * M_PI / 180. * azi[j]) * df.des[pos]
+        );
+      }
+    }     
   }
-
 }
 
 auto check_configuration_file(io::configuration const& config) -> bool
