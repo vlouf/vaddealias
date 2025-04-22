@@ -70,8 +70,8 @@ auto get_nyquist(io::odim::polar_volume const vol_odim) -> array1f{
 
 auto get_range(sweep swp) -> vector<double>{
   vector<double> r;
-  for(const auto& bin : swp.bins) {
-      r.push_back(double(bin.slant_range));
+  for(size_t i=0; i<swp.bins.size(); i++) {
+      r.push_back(swp.bins[i].ground_range);
   }
   return r;
 }
