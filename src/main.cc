@@ -185,23 +185,13 @@ auto argmin(const vector<T>& x, T val) -> size_t{
   return min_index;
 }
 
-auto process_file(
-  io::configuration const& config,
-  std::filesystem::path const& vad_file,
-  std::filesystem::path const& odim_file1,
-  std::filesystem::path const& odim_file2
-) -> void{
-  auto dset1 = read_volume(odim_file1, config, true);
-  auto dset2 = read_volume(odim_file2, config, false);
-  auto df = read_vad(vad_file);
+auto generate_vad_field(radarset dset2, vadset df) -> vector<array2f>{
+  vector<array2f>  vadfield;
 
   // Create the VAD velocity field.
   for(size_t k=0; k < dset2.vradh.sweeps.size(); k++){
-    auto nyquist = dset2.nyquist[k];
-    auto vel = dset2.vradh.sweeps[k].data;
-
     auto r = get_range(dset2.vradh.sweeps[k]);
-    auto azi = get_azimuth(dset2.vradh.sweeps[k]);    
+    auto azi = get_azimuth(dset2.vradh.sweeps[k]);
     auto el = dset2.vradh.sweeps[k].beam.elevation();
     auto cel = cos(M_PI / 180. * el);
     auto sel = sin(M_PI / 180. * el);
@@ -222,8 +212,22 @@ auto process_file(
           + 0.5 * r[i] * cel * sin(2 * M_PI / 180. * azi[j]) * df.des[pos]
         );
       }
-    }     
+    }
+    vadfield.push_back(vrz);
   }
+  return vadfield;
+}
+
+auto process_file(
+  io::configuration const& config,
+  std::filesystem::path const& vad_file,
+  std::filesystem::path const& odim_file1,
+  std::filesystem::path const& odim_file2
+) -> void{
+  auto dset1 = read_volume(odim_file1, config, true);
+  auto dset2 = read_volume(odim_file2, config, false);
+  auto df = read_vad(vad_file);
+  auto vadfield = generate_vad_field(dset2, df);
 }
 
 auto check_configuration_file(io::configuration const& config) -> bool
