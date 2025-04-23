@@ -11,7 +11,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true,
+            "externalConsole": false,  // False if in WSL, True in native linux.
             "MIMode": "gdb",
             "setupCommands": [
                 {
