@@ -151,9 +151,6 @@ auto read_volume(
   dset.date = attributes["date"].get_string();
   dset.time = attributes["time"].get_string();
   dset.beamwidth = attributes["beamwH"].get_real();
-
-  // Logging: Replace with appropriate logging mechanism
-  // logDebug("{} read", path.string());
   return dset;
 }
 
@@ -185,7 +182,7 @@ auto argmin(const vector<T>& x, T val) -> size_t{
   return min_index;
 }
 
-auto generate_vad_field(radarset dset2, vadset df) -> vector<array2f>{
+auto generate_vad_field(const radarset dset2, const vadset df) -> vector<array2f>{
   vector<array2f>  vadfield;
 
   // Create the VAD velocity field.
@@ -218,6 +215,41 @@ auto generate_vad_field(radarset dset2, vadset df) -> vector<array2f>{
   return vadfield;
 }
 
+void unfold_velocity(vector<array2f> &nvel, const vector<array2f> vadfield, const array1f nyquist_vec) {
+  int count = 0;
+  for(size_t k=0; k < nvel.size(); k++){
+    auto [nx, ny] = nvel[k].extents();
+    auto nyquist = nyquist_vec[k];
+
+    for(size_t j=0; j < ny; j++){
+      for(size_t i=0; i < nx; i++){
+        auto vel = nvel[k][j][i];
+        if(std::isnan(vel) || std::abs(vel - undetect) < 0.1f)
+          continue;
+        auto vr = vadfield[k][j][i];
+
+        if(std::abs(vr - vel) > 0.6 * nyquist){
+          for(size_t n=1; n < 5; n++){
+            auto velp = vel + n * nyquist;
+            if(std::abs(vr - velp) <= 0.6 * nyquist){
+              nvel[k][j][i] = velp;
+              count++;
+              break;
+            }
+            auto velm = vel - n * nyquist;
+            if(std::abs(vr - velm) <= 0.6 * nyquist){
+              nvel[k][j][i] = velm;
+              count++;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  std::cout << count << " changed." << std::endl;
+}
+
 auto process_file(
   io::configuration const& config,
   std::filesystem::path const& vad_file,
@@ -228,6 +260,16 @@ auto process_file(
   auto dset2 = read_volume(odim_file2, config, false);
   auto df = read_vad(vad_file);
   auto vadfield = generate_vad_field(dset2, df);
+  vector<array2f> nvel;
+  for(auto v: dset2.vradh.sweeps){
+    nvel.push_back(v.data);
+  }
+
+  auto start = std::chrono::high_resolution_clock::now();
+  unfold_velocity(nvel, vadfield, dset2.nyquist);
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> duration = end - start;
+  std::cout << "Time taken by function: " << duration.count() << " seconds" << std::endl;
 }
 
 auto check_configuration_file(io::configuration const& config) -> bool
