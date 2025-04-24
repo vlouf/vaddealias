@@ -12,11 +12,11 @@ auto read_moment(io::odim::polar_volume const vol_odim, string moment, io::confi
     auto scan_odim = vol_odim.scan_open(iscan);
     auto scan = sweep{};
 
-    if(std::fabs(scan_odim.elevation_angle() - 90) < 0.1f)
-    {
-      // std::cout << "Skipping 90 deg scan" << std::endl;
-      continue;
-    }
+    // if(std::fabs(scan_odim.elevation_angle() - 90) < 0.1f)
+    // {
+    //   // std::cout << "Skipping 90 deg scan" << std::endl;
+    //   continue;
+    // }
 
     scan.beam = radar::beam_propagation{vol.location.alt, scan_odim.elevation_angle() * 1_deg};
 

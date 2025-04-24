@@ -224,8 +224,10 @@ void unfold_velocity(vector<array2f> &nvel, const vector<array2f> vadfield, cons
     for(size_t j=0; j < ny; j++){
       for(size_t i=0; i < nx; i++){
         auto vel = nvel[k][j][i];
-        if(std::isnan(vel) || std::abs(vel - undetect) < 0.1f)
+        if(std::isnan(vel) || std::abs(vel - undetect) < 0.1f){
+          nvel[k][j][i] = -9999.;
           continue;
+        }
         auto vr = vadfield[k][j][i];
 
         if(std::abs(vr - vel) > 0.6 * nyquist){
@@ -247,7 +249,7 @@ void unfold_velocity(vector<array2f> &nvel, const vector<array2f> vadfield, cons
       }
     }
   }
-  std::cout << count << " changed." << std::endl;
+  // std::cout << count << " changed." << std::endl;
 }
 
 auto process_file(
@@ -270,6 +272,22 @@ auto process_file(
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> duration = end - start;
   std::cout << "Time taken by function: " << duration.count() << " seconds" << std::endl;
+
+  io::odim::polar_volume vol_odim{odim_file2, io_mode::read_write};
+  for(size_t k=0; k < nvel.size(); k++){
+    auto scan_odim = vol_odim.scan_open(k);
+    const auto nbins = dset2.dbzh.sweeps[k].bins.size();
+    const auto nrays = dset2.dbzh.sweeps[k].rays.size();
+    size_t dims[2] = {nrays, nbins};
+    auto data = scan_odim.data_append(io::odim::data::data_type::f32, 2, dims);
+    data.write(nvel[k].data());
+    data.set_quantity("VRAD_DEALIAS");
+    data.set_nodata(-9999.);
+    data.set_undetect(-9999.);
+    data.set_gain(1);
+    data.set_offset(0);
+  }
+  std::cout << "Completed." << std::endl;
 }
 
 auto check_configuration_file(io::configuration const& config) -> bool
