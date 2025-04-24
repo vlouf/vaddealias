@@ -1,9 +1,11 @@
 #include "array_operations.h"
 
-auto argmin(array1f const& x) -> int{  
-  int pos = std::distance(x.begin(), std::min_element(x.begin(), x.end()));
-  return pos;
-}
+// template <typename T>
+// auto argmin(const vector<T>& x) -> size_t{
+//   size_t min_index = std::distance(x.begin(), std::min_element(x.begin(), x.end()));
+//   return min_index;
+// }
+
 
 auto copy_mask(array2f const& ref, array2f& dest) -> void
 {

@@ -74,17 +74,11 @@ auto read_global_seamask(string const filename) -> seamask{
 }
 
 auto check_is_ocean(seamask const& landsea, latlon loc) -> bool{
-  auto plat = array1f{landsea.lat.size()};
-  auto plon = array1f{landsea.lon.size()};
-  for(size_t i=0; i<landsea.lat.size(); i++){
-    plat[i] = std::fabs(landsea.lat[i] - loc.lat.degrees());
-  }
-  for(size_t i=0; i<landsea.lon.size(); i++){
-    plon[i] = std::fabs(landsea.lon[i] - loc.lon.degrees());
-  }
-
-  int ilon = argmin(plon);
-  int ilat = argmin(plat);
+  vector<float> lon, lat;
+  for(auto l: landsea.lon) lon.push_back(l);
+  for(auto l: landsea.lat) lat.push_back(l);
+  int ilon = argmin2(lon, float(loc.lon.degrees()));
+  int ilat = argmin2(lat, float(loc.lat.degrees()));
 
   return landsea.mask[ilat][ilon] < 0;
 }

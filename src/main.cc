@@ -171,17 +171,6 @@ std::pair<std::vector<std::vector<T>>, std::vector<std::vector<T>>>{
   return {X, Y};
 }
 
-template <typename T>
-auto argmin(const vector<T>& x, T val) -> size_t{
-  vector<T> x2;
-  for(size_t i=0; i<x.size(); i++){
-    x2.push_back(std::abs(x[i] - val));
-  }
-  auto min_it = std::min_element(x2.begin(), x2.end());
-  size_t min_index = std::distance(x2.begin(), min_it);
-  return min_index;
-}
-
 auto generate_vad_field(const radarset dset2, const vadset df) -> vector<array2f>{
   vector<array2f>  vadfield;
 
@@ -197,7 +186,7 @@ auto generate_vad_field(const radarset dset2, const vadset df) -> vector<array2f
     auto vrz = array2f{vec2z{r.size(), azi.size()}};  // vec2 dimensions are reversed.
     for(size_t i=0; i<r.size(); i++){
       auto alti = dset2.vradh.sweeps[k].bins[i].altitude;
-      auto pos = argmin(df.z, alti);
+      auto pos = argmin2(df.z, alti);
 
       for(size_t j=0; j<azi.size(); j++){
         vrz[j][i] = (
