@@ -49,6 +49,11 @@ struct volume{
   vector<sweep> sweeps;
 };
 
+struct shearset{
+  vector<array2f> azshear;
+  vector<array2f> divshear;
+};
+
 struct radarset{
   volume vradh;
   volume dbzh;

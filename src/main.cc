@@ -241,6 +241,121 @@ void unfold_velocity(vector<array2f> &nvel, const vector<array2f> vadfield, cons
   // std::cout << count << " changed." << std::endl;
 }
 
+auto get_shear_weights(const array2f vel) -> array2f{
+  auto [nr, na] = vel.extents();
+  auto weights = array2f{vec2z{nr, na}};
+  for(size_t j=0; j < na; j++){
+    for(size_t i=0; i< nr; i++){
+      weights[j][i] = std::isnan(vel[j][i]) ? 0 : 1;
+    }
+  }
+
+  return weights;
+}
+
+auto compute_shear(const radarset dset, const std::tuple<int, int> window) -> shearset{
+  shearset shears;
+  size_t m = std::get<0>(window);
+  size_t n = std::get<1>(window);
+
+  for(size_t k=0; k < dset.vradh.sweeps.size(); k++){
+    auto vel = dset.vradh.sweeps[k].data;
+    auto r = get_range(dset.vradh.sweeps[k], false);
+    auto azi = get_azimuth(dset.vradh.sweeps[k]);
+    auto el = dset.vradh.sweeps[k].beam.elevation();
+    auto [nr, na] = vel.extents();
+    auto azsweep = array2f{vec2z{nr, na}};
+    auto divsweep = array2f{vec2z{nr, na}};
+    auto weights = get_shear_weights(vel);
+
+    for(size_t j=0; j < na; j++){
+      for(size_t i=0; i < nr; i++){
+        azsweep[j][i] = nodata;  // Initialising in case of break loop.
+        divsweep[j][i] = nodata;
+      }
+    }
+
+    for(size_t j=0; j < na; j++){
+      auto jstart = j;
+      auto jend = j + n;
+      for(size_t i=0; i< nr - m; i++){
+        auto istart = i;
+        auto iend = i + m;        
+        int mask = 1;
+
+        bool has_nan = false;
+        for (size_t j_idx = jstart; j_idx < jend; ++j_idx) {
+          size_t jj = (j_idx < na) ? j_idx : j_idx - na;  // circular azimuth
+          for (size_t ii = istart; ii < iend; ++ii) {            
+            if (std::isnan(vel[jj][ii])) {
+              has_nan = true;
+              break;
+            }
+          }
+          if (has_nan) break;
+        }
+        if (has_nan) continue;
+
+        int wk = 0;
+        float delta_rk = 0.f;
+        float delta_tk = 0.f;
+        float delta_rk_sq = 0.f;
+        float delta_tk_sq = 0.f;
+        float delta_rktk = 0.f;
+        float delta_rkuk = 0.f;
+        float delta_tkuk = 0.f;
+        float uk = 0.f;
+        for (size_t j_idx = jstart; j_idx < jend; ++j_idx) {
+          size_t jj = (j_idx < na) ? j_idx : j_idx - na;  // circular azimuth
+          for (size_t ii = istart; ii < iend; ++ii) {
+            if(weights[jj][ii] == 0) continue;
+            
+            wk += weights[jj][ii];
+            delta_rk += r[i] - mask * r[ii];
+            delta_tk += azi[j] - mask * azi[jj];
+
+            delta_rk_sq += (r[i] - mask * r[ii]) * (r[i] - mask * r[ii]);
+            delta_tk_sq += (azi[j] - mask * azi[jj]) * (azi[j] - mask * azi[jj]);
+
+            delta_rktk += (r[i] - mask * r[ii]) * (azi[j] - mask * azi[jj]);
+            delta_rkuk += (r[i] - mask * r[ii]) * (mask * vel[jj][ii]);
+            delta_tkuk += (azi[j] - mask * azi[jj]) * (mask * vel[jj][ii]);
+            uk += mask * vel[jj][ii];
+          }
+        }
+
+        auto bottom = (
+            delta_rktk * delta_rktk * wk
+            - 2 * delta_rktk * delta_tk * delta_rk
+            + delta_rk_sq * delta_tk * delta_tk
+            - delta_rk_sq * delta_tk_sq * wk
+            + delta_rk * delta_tk_sq * delta_rk
+        );
+        auto top = (
+            delta_rkuk * (delta_rktk * wk - delta_rk * delta_tk)
+            + delta_tkuk * (delta_rk * delta_rk - delta_rk_sq * wk)
+            + uk * (delta_rk_sq * delta_tk - delta_rk * delta_rktk)
+        );
+        auto top_divr = (
+            delta_rkuk * (delta_tk * delta_tk - delta_tk_sq * wk)
+            + delta_tkuk * (delta_rktk * wk - delta_rk * delta_tk)
+            + uk * (delta_rk * delta_tk_sq - delta_rktk * delta_tk)
+        );
+
+        if(std::fabs(bottom) > 0.001){
+          azsweep[j][i] = top / bottom;
+          divsweep[j][i] = top_divr / bottom;
+        }
+      }
+    }
+    shears.azshear.push_back(azsweep);
+    shears.divshear.push_back(divsweep);
+  }
+
+  std::cout << "Azshear performed." << std::endl;
+  return shears;
+}
+
 auto process_file(
   io::configuration const& config,
   std::filesystem::path const& vad_file,
@@ -251,6 +366,8 @@ auto process_file(
   auto dset2 = read_volume(odim_file2, config, false);
   auto df = read_vad(vad_file);
   auto vadfield = generate_vad_field(dset2, df);
+  auto shears = compute_shear(dset2, std::tuple<int, int>(3, 3));
+
   vector<array2f> nvel;
   for(auto v: dset2.vradh.sweeps){
     nvel.push_back(v.data);
@@ -275,6 +392,22 @@ auto process_file(
     data.set_undetect(-9999.);
     data.set_gain(1);
     data.set_offset(0);
+
+    auto odim_azs = scan_odim.data_append(io::odim::data::data_type::f32, 2, dims);
+    odim_azs.write(shears.azshear[k].data());
+    odim_azs.set_quantity("AZSHEAR");
+    odim_azs.set_nodata(-9999.);
+    odim_azs.set_undetect(-9999.);
+    odim_azs.set_gain(1);
+    odim_azs.set_offset(0);
+
+    auto odim_divs = scan_odim.data_append(io::odim::data::data_type::f32, 2, dims);
+    odim_divs.write(shears.divshear[k].data());
+    odim_divs.set_quantity("DIVSHEAR");
+    odim_divs.set_nodata(-9999.);
+    odim_divs.set_undetect(-9999.);
+    odim_divs.set_gain(1);
+    odim_divs.set_offset(0);
   }
   std::cout << "Completed." << std::endl;
 }
