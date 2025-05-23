@@ -7,7 +7,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/vad-dealias",
-            "args": ["test/flow.66.conf", "test/66_20250305_000500.dat", "test/66_20250305_000000.pvol.h5", "test/66_20250305_000500.pvol.h5"],
+            "args": ["test/flow.66.conf", "test/66_20250305_000500.dat", "build/66_20250308_144000.pvol.h5", "build/66_20250308_144000.pvol.h5"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -20,7 +20,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "CMake: build",
+            "preLaunchTask": "Build and Copy", // Ensure this matches the task label in tasks.json
             "miDebuggerPath": "/usr/bin/gdb", // Adjust this path if GDB is located elsewhere
             "logging": {
                 "moduleLoad": false,

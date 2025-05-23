@@ -1,6 +1,6 @@
 {
     "version": "2.0.0",
-    "tasks": [
+    "tasks": [        
         {
             "label": "CMake: build",
             "type": "shell",
@@ -11,6 +11,28 @@
             },
             "problemMatcher": ["$gcc"],
             "detail": "Generated task by CMake Tools."
-        }
+        },
+        {
+            "label": "Copy data",
+            "type": "shell",
+            "command": "cp -r test/66_20250308_144000.pvol.h5 build/",
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "problemMatcher": [],
+            "detail": "Copy data files to build directory."
+        },
+        {
+            "label": "Build and Copy",
+            "dependsOn": [
+                "CMake: build",
+                "Copy data"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        }    
     ]
 }
