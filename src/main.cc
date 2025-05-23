@@ -238,7 +238,6 @@ void unfold_velocity(vector<array2f> &nvel, const vector<array2f> vadfield, cons
       }
     }
   }
-  // std::cout << count << " changed." << std::endl;
 }
 
 auto get_shear_weights(const array2f vel) -> array2f{
@@ -253,23 +252,42 @@ auto get_shear_weights(const array2f vel) -> array2f{
   return weights;
 }
 
-auto compute_shear(const radarset dset, const std::tuple<int, int> window) -> shearset{
+/**
+ * @brief Computes azimuthal shear and divergence fields from a radial velocity volume.
+ *
+ * This function processes each sweep in the input radar volume, applying a moving window
+ * defined by the given window size (m, n) to compute local shear and divergence estimates.
+ *
+ * @param vrad The input radar volume containing sweeps of radial velocity data.
+ * @param window A tuple (m, n) specifying the window size in range (m) and azimuth (n) directions.
+ * @return shearset A structure containing the computed azimuthal shear and divergence fields for each sweep.
+ *
+ * @note
+  * - Range values are converted from meters to kilometers.
+ * - Azimuth is treated as circular for windowing.
+ * - Uses weighted least squares to estimate shear and divergence within each window.
+ */
+auto compute_shear(const volume vrad, const std::tuple<int, int> window) -> shearset{
   shearset shears;
   size_t m = std::get<0>(window);
   size_t n = std::get<1>(window);
 
-  for(size_t k=0; k < dset.vradh.sweeps.size(); k++){
-    auto vel = dset.vradh.sweeps[k].data;
-    auto r = get_range(dset.vradh.sweeps[k], false);
-    auto azi = get_azimuth(dset.vradh.sweeps[k]);
-    auto el = dset.vradh.sweeps[k].beam.elevation();
+  for(size_t k=0; k < vrad.sweeps.size(); k++){
+    auto vel = vrad.sweeps[k].data;
+    auto r = get_range(vrad.sweeps[k], false);
+    auto azi = get_azimuth(vrad.sweeps[k]);
+    auto el = vrad.sweeps[k].beam.elevation();
     auto [nr, na] = vel.extents();
     auto azsweep = array2f{vec2z{nr, na}};
     auto divsweep = array2f{vec2z{nr, na}};
     auto weights = get_shear_weights(vel);
 
-    for(size_t j=0; j < na; j++){
-      for(size_t i=0; i < nr; i++){
+    for(size_t i=0; i<r.size(); i++){
+      r[i] = 1e-3 * r[i];  // Convert to km
+      for(size_t j=0; j < na; j++){
+        if((vel[j][i] == 0.f) || (vel[j][i] == undetect)){
+          vel[j][i] = nodata;
+        }
         azsweep[j][i] = nodata;  // Initialising in case of break loop.
         divsweep[j][i] = nodata;
       }
@@ -280,13 +298,13 @@ auto compute_shear(const radarset dset, const std::tuple<int, int> window) -> sh
       auto jend = j + n;
       for(size_t i=0; i< nr - m; i++){
         auto istart = i;
-        auto iend = i + m;        
-        int mask = 1;
+        auto iend = i + m;
+        float mask = 1.f;
 
         bool has_nan = false;
         for (size_t j_idx = jstart; j_idx < jend; ++j_idx) {
-          size_t jj = (j_idx < na) ? j_idx : j_idx - na;  // circular azimuth
-          for (size_t ii = istart; ii < iend; ++ii) {            
+          size_t jj = (j_idx < na) ? j_idx : j_idx - na;  // circular azimuth          
+          for (size_t ii = istart; ii < iend; ++ii) {
             if (std::isnan(vel[jj][ii])) {
               has_nan = true;
               break;
@@ -296,7 +314,7 @@ auto compute_shear(const radarset dset, const std::tuple<int, int> window) -> sh
         }
         if (has_nan) continue;
 
-        int wk = 0;
+        float wk = 0.f;
         float delta_rk = 0.f;
         float delta_tk = 0.f;
         float delta_rk_sq = 0.f;
@@ -308,18 +326,21 @@ auto compute_shear(const radarset dset, const std::tuple<int, int> window) -> sh
         for (size_t j_idx = jstart; j_idx < jend; ++j_idx) {
           size_t jj = (j_idx < na) ? j_idx : j_idx - na;  // circular azimuth
           for (size_t ii = istart; ii < iend; ++ii) {
-            if(weights[jj][ii] == 0) continue;
-            
             wk += weights[jj][ii];
-            delta_rk += r[i] - mask * r[ii];
-            delta_tk += azi[j] - mask * azi[jj];
+            auto rk = r[i] - mask * r[ii];
+            auto tk = azi[j] - mask * azi[jj];
+            if(std::fabs(tk) > 180){  // Circular azimuth         
+              tk = azi[j] - (360 + mask * azi[jj]);
+            }
 
-            delta_rk_sq += (r[i] - mask * r[ii]) * (r[i] - mask * r[ii]);
-            delta_tk_sq += (azi[j] - mask * azi[jj]) * (azi[j] - mask * azi[jj]);
+            delta_rk += rk;
+            delta_tk += tk;
+            delta_rk_sq += rk * rk;
+            delta_tk_sq += tk * tk;
 
-            delta_rktk += (r[i] - mask * r[ii]) * (azi[j] - mask * azi[jj]);
-            delta_rkuk += (r[i] - mask * r[ii]) * (mask * vel[jj][ii]);
-            delta_tkuk += (azi[j] - mask * azi[jj]) * (mask * vel[jj][ii]);
+            delta_rktk += rk * tk;
+            delta_rkuk += rk * (mask * vel[jj][ii]);
+            delta_tkuk += tk * (mask * vel[jj][ii]);
             uk += mask * vel[jj][ii];
           }
         }
@@ -351,8 +372,7 @@ auto compute_shear(const radarset dset, const std::tuple<int, int> window) -> sh
     shears.azshear.push_back(azsweep);
     shears.divshear.push_back(divsweep);
   }
-
-  std::cout << "Azshear performed." << std::endl;
+  
   return shears;
 }
 
@@ -366,7 +386,7 @@ auto process_file(
   auto dset2 = read_volume(odim_file2, config, false);
   auto df = read_vad(vad_file);
   auto vadfield = generate_vad_field(dset2, df);
-  auto shears = compute_shear(dset2, std::tuple<int, int>(3, 3));
+  auto shears = compute_shear(dset2.vradh, std::tuple<int, int>(3, 3));
 
   vector<array2f> nvel;
   for(auto v: dset2.vradh.sweeps){
@@ -396,16 +416,16 @@ auto process_file(
     auto odim_azs = scan_odim.data_append(io::odim::data::data_type::f32, 2, dims);
     odim_azs.write(shears.azshear[k].data());
     odim_azs.set_quantity("AZSHEAR");
-    odim_azs.set_nodata(-9999.);
-    odim_azs.set_undetect(-9999.);
+    odim_azs.set_nodata(nodata);
+    odim_azs.set_undetect(0.f);
     odim_azs.set_gain(1);
     odim_azs.set_offset(0);
 
     auto odim_divs = scan_odim.data_append(io::odim::data::data_type::f32, 2, dims);
     odim_divs.write(shears.divshear[k].data());
     odim_divs.set_quantity("DIVSHEAR");
-    odim_divs.set_nodata(-9999.);
-    odim_divs.set_undetect(-9999.);
+    odim_divs.set_nodata(nodata);
+    odim_divs.set_undetect(0.f);
     odim_divs.set_gain(1);
     odim_divs.set_offset(0);
   }
